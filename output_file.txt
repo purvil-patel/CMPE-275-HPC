@@ -1,0 +1,274 @@
+File Name: reader.h
+#ifndef READER_H
+#define READER_H
+
+#include <string>
+#include <vector>
+
+void calculateOffsets(const std::string& filePath, std::vector<long>& offsets);
+void distributeRecords(const std::string& filePath, int rank, int size, std::vector<std::string>& records);
+
+#endif // READER_H
+
+--------------------------------------------------------------------------------
+File Name: loader.h
+#ifndef LOADER_H
+#define LOADER_H
+
+#include <vector>
+#include <string>
+
+void processRecords(const std::vector<std::string>& records, int rank);
+
+#endif // LOADER_H
+
+--------------------------------------------------------------------------------
+File Name: reader.cpp
+#include <iostream>
+#include <fstream>
+#include <mpi.h>
+#include <string>
+#include <vector>
+#include <sstream>
+#include "logger.h"
+
+// New function to calculate offsets
+void calculateOffsets(const std::string& filePath, std::vector<long>& offsets) {
+    std::ifstream file(filePath, std::ios::binary);
+    if (!file.is_open()) {
+        std::cerr << "Failed to open file for offset calculation.\n";
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+
+    offsets.push_back(0);  // The first record starts at offset 0
+    char c;
+    while (file.get(c)) {
+        if (c == '\n') {  // Assuming Unix-style line endings
+            // Save the position of the start of the next line
+            offsets.push_back(file.tellg());
+        }
+    }
+    file.close();
+}
+
+void distributeRecords(const std::string& filePath, int rank, int size, std::vector<std::string>& records) {
+    std::vector<long> allOffsets;
+    if (rank == 0) {
+        calculateOffsets(filePath, allOffsets);
+    }
+
+    // Number of records is one less than the number of offsets since the last offset marks the end of the file
+    int totalCount = allOffsets.size() - 1;
+
+    // Broadcast totalCount to all processes since it's needed for calculating ranges
+    MPI_Bcast(&totalCount, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+    // Determine the range of records for this process
+    int recordsPerProcess = totalCount / size;
+    int remainingRecords = totalCount % size;
+
+    int startRecord = rank * recordsPerProcess + std::min(rank, remainingRecords);
+    int endRecord = startRecord + recordsPerProcess + (rank < remainingRecords ? 1 : 0);
+
+    // Now, distribute the offsets for only the required records to each process
+    long startOffset, endOffset;
+    if (rank == 0) {
+        // Send the specific starting and ending offsets to each process
+        for (int i = 0; i < size; i++) {
+            int startIdx = i * recordsPerProcess + std::min(i, remainingRecords);
+            int endIdx = startIdx + recordsPerProcess + (i < remainingRecords ? 1 : 0) - 1; // -1 because endIdx should be inclusive
+
+            long offsetsToSend[2] = {allOffsets[startIdx], allOffsets[endIdx + 1]}; // +1 to include the newline character of the last record
+            if (i == 0) {
+                startOffset = offsetsToSend[0];
+                endOffset = offsetsToSend[1];
+            } else {
+                MPI_Send(&offsetsToSend, 2, MPI_LONG, i, 0, MPI_COMM_WORLD);
+            }
+        }
+    } else {
+        long receivedOffsets[2];
+        MPI_Recv(&receivedOffsets, 2, MPI_LONG, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        startOffset = receivedOffsets[0];
+        endOffset = receivedOffsets[1];
+    }
+
+    std::ostringstream msg;
+    msg << "Process " << rank << " reading from offset " << startOffset << " to " << endOffset;
+    logMessage(msg.str(), rank);
+
+    // Each process reads its assigned portion of the file based on offsets
+    std::ifstream file(filePath, std::ios::binary);
+    file.seekg(startOffset);
+    std::string line;
+    while (file.tellg() < endOffset && std::getline(file, line)) {
+        records.push_back(line);
+    }
+
+    msg.str("");
+    msg << "Process " << rank << " finished reading. Total records read: " << records.size();
+    logMessage(msg.str(), rank);
+}
+
+--------------------------------------------------------------------------------
+File Name: log_process_1.txt
+MPI Initialized.
+Process 1 reading from offset 63019764 to 125989148
+Process 1 finished reading. Total records read: 2974888
+Starting to process records in parallel. Total records: 2974888
+Finished processing records in parallel. Total records processed: 2974888
+Finalizing MPI.
+
+--------------------------------------------------------------------------------
+File Name: log_process_0.txt
+MPI Initialized.
+Process 0 reading from offset 0 to 63019764
+Process 0 finished reading. Total records read: 2974888
+Starting to process records in parallel. Total records: 2974888
+Finished processing records in parallel. Total records processed: 2974888
+Finalizing MPI.
+
+--------------------------------------------------------------------------------
+File Name: logger.cpp
+// logger.cpp
+#include "logger.h"
+#include <fstream>
+#include <sstream>
+#include <iostream>
+
+void logMessage(const std::string& message, int rank) {
+    std::ostringstream filename;
+    filename << "log_process_" << rank << ".txt";
+    std::ofstream logFile(filename.str(), std::ios::app); // Append mode
+
+    if (logFile.is_open()) {
+        logFile << message << std::endl;
+        logFile.close();
+    } else {
+        std::cerr << "Failed to open log file for process " << rank << std::endl;
+    }
+}
+
+--------------------------------------------------------------------------------
+File Name: log_process_2.txt
+MPI Initialized.
+Process 2 reading from offset 125989148 to 189032330
+Process 2 finished reading. Total records read: 2974888
+Starting to process records in parallel. Total records: 2974888
+Finished processing records in parallel. Total records processed: 2974888
+Finalizing MPI.
+
+--------------------------------------------------------------------------------
+File Name: logger.h
+#ifndef LOGGER_H
+#define LOGGER_H
+
+#include <string>
+
+void logMessage(const std::string& message, int rank);
+
+#endif // LOGGER_H
+
+--------------------------------------------------------------------------------
+File Name: file_gen.py
+import os
+
+def write_contents_and_filenames_to_new_file(folder_path, output_file_path):
+    with open(output_file_path, 'w', encoding='utf-8') as output_file:
+        # Walk through all directories and files in the folder
+        for root, dirs, files in os.walk(folder_path):
+            for file in files:
+                # Skip if the file is a .txt file
+                # if file.endswith('.txt'):
+                #     continue
+                
+                file_path = os.path.join(root, file)
+                try:
+                    # Read the content of the current file
+                    with open(file_path, 'r', encoding='utf-8') as current_file:
+                        content = current_file.read()
+
+                    # Write the file name and its content to the output file
+                    output_file.write(f"File Name: {file}\n{content}\n")
+                    output_file.write("-" * 80 + "\n")  # Separator between files
+
+                except Exception as e:
+                    print(f"Could not process {file_path}: {e}")
+
+    print(f"Contents have been written to {output_file_path}")
+
+# Example usage
+folder_path = '/Users/spartan/Documents/SJSU/Sem2/CMPE-275/Mini2/Final_code/src'  # Folder containing the files you want to process
+output_file_path = '/Users/spartan/Documents/SJSU/Sem2/CMPE-275/Mini2/Final_code/output_file.txt'  # Path where you want to save the new file
+write_contents_and_filenames_to_new_file(folder_path, output_file_path)
+
+--------------------------------------------------------------------------------
+File Name: loader.cpp
+#include <iostream>
+#include <vector>
+#include <string>
+#include <sstream>
+#include "logger.h"
+#include <omp.h> // Include the OpenMP header
+
+void processRecords(const std::vector<std::string>& records, int rank) {
+    int numRecords = records.size();
+
+    // Log the start of processing
+    std::ostringstream msg;
+    msg << "Starting to process records in parallel. Total records: " << numRecords;
+    logMessage(msg.str(), rank);
+
+    // The actual processing part, parallelized using OpenMP
+    #pragma omp parallel for default(none) shared(records, numRecords, rank)
+    for (int i = 0; i < numRecords; ++i) {
+        // Each thread processes a portion of the records
+        // Insert your data processing logic here
+        // For demonstration, we'll just log the processing of each record by each thread (not recommended for actual logging due to high volume)
+        // #pragma omp critical
+        // {
+        //     std::ostringstream threadMsg;
+        //     threadMsg << "Thread " << omp_get_thread_num() << " processing record " << i;
+        //     logMessage(threadMsg.str(), rank);
+        // }
+    }
+
+    // Log the end of processing
+    msg.str("");
+    msg << "Finished processing records in parallel. Total records processed: " << numRecords;
+    logMessage(msg.str(), rank);
+}
+
+--------------------------------------------------------------------------------
+File Name: main.cpp
+// main.cpp
+#include <mpi.h>
+#include <vector>
+#include <string>
+#include "reader.h"
+#include "loader.h"
+#include "logger.h"
+
+int main(int argc, char* argv[]) {
+    MPI_Init(&argc, &argv);
+
+    int rank, size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    logMessage("MPI Initialized.", rank);
+
+    std::vector<std::string> records;
+    std::string filePath = "/Users/spartan/Documents/SJSU/Sem2/CMPE-275/Mini2/Final_code/data/processed.csv"; 
+
+    distributeRecords(filePath, rank, size, records);
+    processRecords(records, rank);
+
+    logMessage("Finalizing MPI.", rank);
+
+    MPI_Finalize();
+
+    return 0;
+}
+
+--------------------------------------------------------------------------------

@@ -1,0 +1,6 @@
+MPI Initialized.
+Process 2 reading from offset 125989148 to 189032330
+Process 2 finished reading. Total records read: 2974888
+Starting to process records in parallel. Total records: 2974888
+Finished processing records in parallel. Total records processed: 2974888
+Finalizing MPI.
