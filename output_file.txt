@@ -115,8 +115,6 @@ File Name: log_process_1.txt
 MPI Initialized.
 Process 1 reading from offset 63019764 to 125989148
 Process 1 finished reading. Total records read: 2974888
-Starting to process records in parallel. Total records: 2974888
-Finished processing records in parallel. Total records processed: 2974888
 Finalizing MPI.
 
 --------------------------------------------------------------------------------
@@ -124,13 +122,10 @@ File Name: log_process_0.txt
 MPI Initialized.
 Process 0 reading from offset 0 to 63019764
 Process 0 finished reading. Total records read: 2974888
-Starting to process records in parallel. Total records: 2974888
-Finished processing records in parallel. Total records processed: 2974888
 Finalizing MPI.
 
 --------------------------------------------------------------------------------
 File Name: logger.cpp
-// logger.cpp
 #include "logger.h"
 #include <fstream>
 #include <sstream>
@@ -139,8 +134,7 @@ File Name: logger.cpp
 void logMessage(const std::string& message, int rank) {
     std::ostringstream filename;
     filename << "log_process_" << rank << ".txt";
-    std::ofstream logFile(filename.str(), std::ios::app); // Append mode
-
+    std::ofstream logFile(filename.str(), std::ios::app);
     if (logFile.is_open()) {
         logFile << message << std::endl;
         logFile.close();
@@ -149,13 +143,26 @@ void logMessage(const std::string& message, int rank) {
     }
 }
 
+// Implement the new function
+void logMetrics(double startTime, double endTime, int recordsProcessed, int rank) {
+    std::ostringstream filename;
+    filename << "metrics_process_" << rank << ".txt"; // Separate file for metrics
+    std::ofstream metricsFile(filename.str(), std::ios::app);
+    if (metricsFile.is_open()) {
+        double duration = endTime - startTime;
+        double recordsPerSecond = recordsProcessed / duration;
+        metricsFile << "Duration: " << duration << "s, Records Per Second: " << recordsPerSecond << std::endl;
+        metricsFile.close();
+    } else {
+        std::cerr << "Failed to open metrics file for process " << rank << std::endl;
+    }
+}
+
 --------------------------------------------------------------------------------
 File Name: log_process_2.txt
 MPI Initialized.
 Process 2 reading from offset 125989148 to 189032330
 Process 2 finished reading. Total records read: 2974888
-Starting to process records in parallel. Total records: 2974888
-Finished processing records in parallel. Total records processed: 2974888
 Finalizing MPI.
 
 --------------------------------------------------------------------------------
@@ -166,6 +173,7 @@ File Name: logger.h
 #include <string>
 
 void logMessage(const std::string& message, int rank);
+void logMetrics(double startTime, double endTime, int recordsProcessed, int rank); // Add this line
 
 #endif // LOGGER_H
 
@@ -179,8 +187,8 @@ def write_contents_and_filenames_to_new_file(folder_path, output_file_path):
         for root, dirs, files in os.walk(folder_path):
             for file in files:
                 # Skip if the file is a .txt file
-                # if file.endswith('.txt'):
-                #     continue
+                if file.endswith('.csv'):
+                    continue
                 
                 file_path = os.path.join(root, file)
                 try:
@@ -198,8 +206,8 @@ def write_contents_and_filenames_to_new_file(folder_path, output_file_path):
     print(f"Contents have been written to {output_file_path}")
 
 # Example usage
-folder_path = '/Users/spartan/Documents/SJSU/Sem2/CMPE-275/Mini2/Final_code/src'  # Folder containing the files you want to process
-output_file_path = '/Users/spartan/Documents/SJSU/Sem2/CMPE-275/Mini2/Final_code/output_file.txt'  # Path where you want to save the new file
+folder_path = '/Users/spartan/Documents/SJSU/Sem2/CMPE-275/Mini2/Final_code/CMPE-275-HPC/src'  # Folder containing the files you want to process
+output_file_path = '/Users/spartan/Documents/SJSU/Sem2/CMPE-275/Mini2/Final_code/CMPE-275-HPC/output_file.txt'  # Path where you want to save the new file
 write_contents_and_filenames_to_new_file(folder_path, output_file_path)
 
 --------------------------------------------------------------------------------
@@ -208,49 +216,55 @@ File Name: loader.cpp
 #include <vector>
 #include <string>
 #include <sstream>
+#include <fstream> // Necessary for std::ofstream
+#include <unordered_map>
 #include "logger.h"
-#include <omp.h> // Include the OpenMP header
+#include <omp.h>
+#include <mpi.h>
 
 void processRecords(const std::vector<std::string>& records, int rank) {
-    int numRecords = records.size();
+    double processStartTime = MPI_Wtime(); // Time in seconds
+    std::unordered_map<int, int> recordsPerMillisecond;
 
-    // Log the start of processing
-    std::ostringstream msg;
-    msg << "Starting to process records in parallel. Total records: " << numRecords;
-    logMessage(msg.str(), rank);
+    // Assume each record processing is simulated or actually takes some time
+    for (int i = 0; i < records.size(); ++i) {
+        // Simulate record processing time here or perform actual processing
 
-    // The actual processing part, parallelized using OpenMP
-    #pragma omp parallel for default(none) shared(records, numRecords, rank)
-    for (int i = 0; i < numRecords; ++i) {
-        // Each thread processes a portion of the records
-        // Insert your data processing logic here
-        // For demonstration, we'll just log the processing of each record by each thread (not recommended for actual logging due to high volume)
-        // #pragma omp critical
-        // {
-        //     std::ostringstream threadMsg;
-        //     threadMsg << "Thread " << omp_get_thread_num() << " processing record " << i;
-        //     logMessage(threadMsg.str(), rank);
-        // }
+        double currentTime = MPI_Wtime(); // Current time in seconds
+        int elapsedMilliseconds = static_cast<int>((currentTime - processStartTime) * 1000); // Convert to milliseconds
+        recordsPerMillisecond[elapsedMilliseconds]++;
+
+        // Insert actual processing logic here
     }
 
-    // Log the end of processing
-    msg.str("");
-    msg << "Finished processing records in parallel. Total records processed: " << numRecords;
-    logMessage(msg.str(), rank);
+    // After processing, log the counts to a file
+    std::ostringstream filename;
+    filename << "records_per_millisecond_process_" << rank << ".txt"; // File name includes process rank
+    std::ofstream outFile(filename.str());
+    if (!outFile) {
+        std::cerr << "Failed to open file for writing: " << filename.str() << std::endl;
+        return; // Exit the function if file opening fails
+    }
+
+    outFile << "Milliseconds,RecordsProcessed\n"; // Column headers for clarity
+    for (const auto& pair : recordsPerMillisecond) {
+        outFile << pair.first << "," << pair.second << "\n";
+    }
 }
 
 --------------------------------------------------------------------------------
 File Name: main.cpp
-// main.cpp
 #include <mpi.h>
 #include <vector>
 #include <string>
 #include "reader.h"
 #include "loader.h"
 #include "logger.h"
+#include <iostream>
 
 int main(int argc, char* argv[]) {
     MPI_Init(&argc, &argv);
+    double startTime = MPI_Wtime();
 
     int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -259,12 +273,18 @@ int main(int argc, char* argv[]) {
     logMessage("MPI Initialized.", rank);
 
     std::vector<std::string> records;
-    std::string filePath = "/Users/spartan/Documents/SJSU/Sem2/CMPE-275/Mini2/Final_code/data/processed.csv"; 
+    std::string filePath = "../data/processed.csv"; 
 
     distributeRecords(filePath, rank, size, records);
     processRecords(records, rank);
 
     logMessage("Finalizing MPI.", rank);
+
+    double endTime = MPI_Wtime();
+    double executionTime = endTime - startTime;
+    if (rank == 0) {
+        std::cout << "Total Execution Time: " << executionTime << " seconds." << std::endl;
+    }
 
     MPI_Finalize();
 

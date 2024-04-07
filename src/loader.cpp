@@ -1,44 +1,49 @@
 #include <iostream>
 #include <vector>
 #include <string>
-#include <sstream>
+#include <fstream>
+#include <chrono>
 #include "logger.h"
-#include <omp.h> // Include the OpenMP header
+#include <omp.h>
 #include <mpi.h>
 
-
 void processRecords(const std::vector<std::string>& records, int rank) {
-    // Log the start of processing
-    std::ostringstream msg;
-    double processStartTime = MPI_Wtime();  // Start timing
-    int numRecords = records.size();
+    using namespace std::chrono;
 
-    msg<< "Starting time of processRecords: " << processStartTime  * 1000 << " seconds.";
-    msg << "Starting to process records in parallel. Total records: " << numRecords;
-    logMessage(msg.str(), rank);
+    // Preparing for parallel execution
+    #pragma omp parallel
+    {
+        // Each thread will have its own stringstream to accumulate its output
+        std::ostringstream threadOutput;
+        
+        // Get the start time for the whole processing (not thread-local)
+        auto processStartTime = high_resolution_clock::now();
 
-    // The actual processing part, parallelized using OpenMP
-    #pragma omp parallel for default(none) shared(records, numRecords, rank)
-    for (int i = 0; i < numRecords; ++i) {
-        // Each thread processes a portion of the records
-        // Insert your data processing logic here
-        // For demonstration, we'll just log the processing of each record by each thread (not recommended for actual logging due to high volume)
-        // #pragma omp critical
-        // {
-        //     std::ostringstream threadMsg;
-        //     threadMsg << "Thread " << omp_get_thread_num() << " processing record " << i;
-        //     logMessage(threadMsg.str(), rank);
-        // }
+        #pragma omp for // Distribute loop iterations across threads
+        for (size_t i = 0; i < records.size(); ++i) {
+            // Simulate record processing or include your processing logic here
+            // This is a placeholder for the actual work done on each record
+
+            auto currentTime = high_resolution_clock::now();
+            auto elapsedMilliseconds = duration_cast<milliseconds>(currentTime - processStartTime).count();
+            
+            // Use threadOutput for logging to avoid critical section here
+            threadOutput << elapsedMilliseconds << ",1\n"; // Assuming processing of one record at a time
+        }
+
+        // Now, critical section is used only when writing from the thread's stringstream to the file
+        #pragma omp critical
+        {
+            std::ofstream outFile("records_timing_process_" + std::to_string(rank) + ".txt", std::ios::app);
+            if (!outFile) {
+                #pragma omp critical
+                {
+                    std::cerr << "Failed to open file for writing by thread." << std::endl;
+                }
+            } else {
+                outFile << threadOutput.str();
+            }
+        }
     }
-
-    // Log the end of processing
-    msg.str("");
-    msg << "Finished processing records in parallel. Total records processed: " << numRecords;
-    logMessage(msg.str(), rank);
-
-    double processEndTime = MPI_Wtime();  // End timing
-    double processTime = processEndTime - processStartTime;
-    msg<< "Ending time of processRecords: " << processEndTime * 1000 << " seconds.";
-    msg << "Process " << rank << " processing time: " << processTime << " seconds.";
-    logMessage(msg.str(), rank);
+    // The rest of your function...
 }
