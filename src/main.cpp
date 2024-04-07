@@ -5,9 +5,11 @@
 #include "reader.h"
 #include "loader.h"
 #include "logger.h"
+#include <iostream>
 
 int main(int argc, char* argv[]) {
     MPI_Init(&argc, &argv);
+    double startTime = MPI_Wtime();
 
     int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -16,12 +18,18 @@ int main(int argc, char* argv[]) {
     logMessage("MPI Initialized.", rank);
 
     std::vector<std::string> records;
-    std::string filePath = "/Users/spartan/Documents/SJSU/Sem2/CMPE-275/Mini2/Final_code/CMPE-275-HPC/data/processed.csv"; 
+    std::string filePath = "/Users/spartan/CMPE-275/CMPE-275-HPC/processed.csv"; 
 
     distributeRecords(filePath, rank, size, records);
     processRecords(records, rank);
 
     logMessage("Finalizing MPI.", rank);
+
+    double endTime = MPI_Wtime();  // End timing
+    double executionTime = endTime - startTime;
+    if (rank == 0) {
+        std::cout << "Total Execution Time: " << executionTime << " seconds." << std::endl;
+    }
 
     MPI_Finalize();
 
