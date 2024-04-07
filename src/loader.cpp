@@ -1,34 +1,41 @@
-#include <iostream>
-#include <vector>
-#include <string>
-#include <sstream>
+#include "VehicleRecord.h"
 #include "logger.h"
-#include <omp.h> // Include the OpenMP header
+#include <omp.h>
+#include <vector>
+#include <iostream>
+#include <map>          // Include for std::map
+#include <sstream>      // Include for std::ostringstream
 
-void processRecords(const std::vector<std::string>& records, int rank) {
-    int numRecords = records.size();
-
-    // Log the start of processing
+void processRecords(const std::vector<VehicleRecord>& records, int rank) {
     std::ostringstream msg;
-    msg << "Starting to process records in parallel. Total records: " << numRecords;
+    msg << "Starting to process records. Total records: " << records.size();
     logMessage(msg.str(), rank);
 
-    // The actual processing part, parallelized using OpenMP
-    #pragma omp parallel for default(none) shared(records, numRecords, rank)
-    for (int i = 0; i < numRecords; ++i) {
-        // Each thread processes a portion of the records
-        // Insert your data processing logic here
-        // For demonstration, we'll just log the processing of each record by each thread (not recommended for actual logging due to high volume)
-        // #pragma omp critical
-        // {
-        //     std::ostringstream threadMsg;
-        //     threadMsg << "Thread " << omp_get_thread_num() << " processing record " << i;
-        //     logMessage(threadMsg.str(), rank);
-        // }
+    // Initialize a local map for each thread to avoid the need for critical sections
+    std::vector<std::map<int, int>> localMaps(omp_get_max_threads());
+
+    #pragma omp parallel for
+    for (size_t i = 0; i < records.size(); ++i) {
+        int age = records[i].vehicleAge;
+        int threadNum = omp_get_thread_num();
+        localMaps[threadNum][age]++;
     }
 
-    // Log the end of processing
+    // Combine local maps into a single map
+    std::map<int, int> violationsByAge;
+    for (auto& localMap : localMaps) {
+        for (auto& entry : localMap) {
+            violationsByAge[entry.first] += entry.second;
+        }
+    }
+
     msg.str("");
-    msg << "Finished processing records in parallel. Total records processed: " << numRecords;
+    msg << "Finished processing records. Total records processed: " << records.size();
     logMessage(msg.str(), rank);
+
+    for (const auto& pair : violationsByAge) {
+        std::ostringstream ageMsg;
+        ageMsg << "Vehicle Age: " << pair.first << ", Violations: " << pair.second;
+        logMessage(ageMsg.str(), rank);
+    }
 }

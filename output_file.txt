@@ -4,11 +4,35 @@ File Name: reader.h
 
 #include <string>
 #include <vector>
+#include "VehicleRecord.h" // Include the definition of VehicleRecord
 
 void calculateOffsets(const std::string& filePath, std::vector<long>& offsets);
-void distributeRecords(const std::string& filePath, int rank, int size, std::vector<std::string>& records);
+void distributeRecords(const std::string& filePath, int rank, int size, std::vector<VehicleRecord>& records);
 
 #endif // READER_H
+
+--------------------------------------------------------------------------------
+File Name: VehicleRecord.h
+#ifndef VEHICLE_RECORD_H
+#define VEHICLE_RECORD_H
+
+#include <string>
+
+struct VehicleRecord {
+    int violationCode;
+    int vehicleYear;
+    std::string issueDate;
+    int vehicleAge;
+
+    // Default constructor
+    VehicleRecord() : violationCode(0), vehicleYear(0), issueDate(""), vehicleAge(0) {}
+
+    // Constructor for easy initialization
+    VehicleRecord(int code, int year, std::string date, int age)
+        : violationCode(code), vehicleYear(year), issueDate(date), vehicleAge(age) {}
+};
+
+#endif // VEHICLE_RECORD_H
 
 --------------------------------------------------------------------------------
 File Name: loader.h
@@ -16,14 +40,15 @@ File Name: loader.h
 #define LOADER_H
 
 #include <vector>
-#include <string>
+#include "VehicleRecord.h" // Ensure VehicleRecord is included
 
-void processRecords(const std::vector<std::string>& records, int rank);
+void processRecords(const std::vector<VehicleRecord>& records, int rank);
 
 #endif // LOADER_H
 
 --------------------------------------------------------------------------------
 File Name: reader.cpp
+#include <optional>
 #include <iostream>
 #include <fstream>
 #include <mpi.h>
@@ -31,6 +56,39 @@ File Name: reader.cpp
 #include <vector>
 #include <sstream>
 #include "logger.h"
+#include "VehicleRecord.h" // Include the header where VehicleRecord is defined
+
+// Assume the VehicleRecord struct is defined in VehicleRecord.h as previously described
+
+std::optional<VehicleRecord> parseLineToRecord(const std::string& line) {
+    std::stringstream ss(line);
+    std::string item;
+    std::vector<std::string> parsedLine;
+
+    while (std::getline(ss, item, ',')) {
+        parsedLine.push_back(item);
+    }
+
+    try {
+        if (parsedLine.size() < 4) {
+            std::cerr << "Incomplete line: " << line << std::endl;
+            return std::nullopt;
+        }
+        int violationCode = std::stoi(parsedLine[0]);
+        int vehicleYear = std::stoi(parsedLine[1]);
+        std::string issueDate = parsedLine[2];
+        int vehicleAge = std::stoi(parsedLine[3]);
+
+        return VehicleRecord(violationCode, vehicleYear, issueDate, vehicleAge);
+    } catch (const std::invalid_argument& e) {
+        std::cerr << "Invalid argument encountered when parsing line: " << line << " | Error: " << e.what() << std::endl;
+    } catch (const std::out_of_range& e) {
+        std::cerr << "Out of range error encountered when parsing line: " << line << " | Error: " << e.what() << std::endl;
+    }
+    return std::nullopt;
+}
+
+
 
 // New function to calculate offsets
 void calculateOffsets(const std::string& filePath, std::vector<long>& offsets) {
@@ -51,81 +109,174 @@ void calculateOffsets(const std::string& filePath, std::vector<long>& offsets) {
     file.close();
 }
 
-void distributeRecords(const std::string& filePath, int rank, int size, std::vector<std::string>& records) {
+void distributeRecords(const std::string& filePath, int rank, int size, std::vector<VehicleRecord>& records) {
     std::vector<long> allOffsets;
     if (rank == 0) {
         calculateOffsets(filePath, allOffsets);
     }
-
-    // Number of records is one less than the number of offsets since the last offset marks the end of the file
-    int totalCount = allOffsets.size() - 1;
-
-    // Broadcast totalCount to all processes since it's needed for calculating ranges
+    
+    // Broadcast the total count of offsets to all processes
+    int totalCount = allOffsets.size() - 1; // Number of records is offsets count - 1
     MPI_Bcast(&totalCount, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-    // Determine the range of records for this process
-    int recordsPerProcess = totalCount / size;
-    int remainingRecords = totalCount % size;
+    // Each process calculates its portion of the file to read
+    int startIdx = rank * (totalCount / size) + std::min(rank, totalCount % size);
+    int endIdx = (rank + 1) * (totalCount / size) + std::min(rank + 1, totalCount % size) - 1;
 
-    int startRecord = rank * recordsPerProcess + std::min(rank, remainingRecords);
-    int endRecord = startRecord + recordsPerProcess + (rank < remainingRecords ? 1 : 0);
-
-    // Now, distribute the offsets for only the required records to each process
     long startOffset, endOffset;
+    // Handle the distribution of start and end offsets for each process
     if (rank == 0) {
-        // Send the specific starting and ending offsets to each process
         for (int i = 0; i < size; i++) {
-            int startIdx = i * recordsPerProcess + std::min(i, remainingRecords);
-            int endIdx = startIdx + recordsPerProcess + (i < remainingRecords ? 1 : 0) - 1; // -1 because endIdx should be inclusive
-
-            long offsetsToSend[2] = {allOffsets[startIdx], allOffsets[endIdx + 1]}; // +1 to include the newline character of the last record
             if (i == 0) {
-                startOffset = offsetsToSend[0];
-                endOffset = offsetsToSend[1];
+                startOffset = allOffsets[startIdx];
+                endOffset = allOffsets[endIdx + 1]; // To include the last record fully
             } else {
-                MPI_Send(&offsetsToSend, 2, MPI_LONG, i, 0, MPI_COMM_WORLD);
+                long offsets[2] = {allOffsets[startIdx], allOffsets[endIdx + 1]};
+                MPI_Send(offsets, 2, MPI_LONG, i, 0, MPI_COMM_WORLD);
             }
         }
     } else {
-        long receivedOffsets[2];
-        MPI_Recv(&receivedOffsets, 2, MPI_LONG, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        startOffset = receivedOffsets[0];
-        endOffset = receivedOffsets[1];
+        long offsets[2];
+        MPI_Recv(offsets, 2, MPI_LONG, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        startOffset = offsets[0];
+        endOffset = offsets[1];
     }
 
-    std::ostringstream msg;
-    msg << "Process " << rank << " reading from offset " << startOffset << " to " << endOffset;
-    logMessage(msg.str(), rank);
-
-    // Each process reads its assigned portion of the file based on offsets
     std::ifstream file(filePath, std::ios::binary);
+    if (!file.is_open()) {
+        std::cerr << "Failed to open file on process " << rank << ".\n";
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+
     file.seekg(startOffset);
     std::string line;
-    while (file.tellg() < endOffset && std::getline(file, line)) {
-        records.push_back(line);
+    if (startOffset != 0) {
+        // Skip the first line as it may be incomplete
+        std::getline(file, line);
     }
-
-    msg.str("");
-    msg << "Process " << rank << " finished reading. Total records read: " << records.size();
-    logMessage(msg.str(), rank);
+    while (file.tellg() < endOffset && std::getline(file, line)) {
+        auto recordOpt = parseLineToRecord(line); // Receive optional VehicleRecord
+        if (recordOpt) { // Check if there's a value
+            records.push_back(*recordOpt); // Dereference to get the VehicleRecord and push it
+        } else {
+            // Handle the case where parsing failed, e.g., log an error or skip the line
+        }
+    }
+    file.close();
 }
 
 --------------------------------------------------------------------------------
 File Name: log_process_1.txt
 MPI Initialized.
-Process 1 reading from offset 63019764 to 125989148
-Process 1 finished reading. Total records read: 2974888
-Starting to process records in parallel. Total records: 2974888
-Finished processing records in parallel. Total records processed: 2974888
+MPI Initialized.
+Starting to process records. Total records: 2974887
+Finished processing records. Total records processed: 2974887
+Vehicle Age: -23, Violations: 1
+Vehicle Age: -22, Violations: 1
+Vehicle Age: -20, Violations: 2
+Vehicle Age: -18, Violations: 1
+Vehicle Age: -17, Violations: 1
+Vehicle Age: -15, Violations: 1
+Vehicle Age: -14, Violations: 1
+Vehicle Age: -13, Violations: 2
+Vehicle Age: -11, Violations: 1
+Vehicle Age: -9, Violations: 1
+Vehicle Age: -8, Violations: 1
+Vehicle Age: -7, Violations: 2
+Vehicle Age: -6, Violations: 1
+Vehicle Age: -5, Violations: 1
+Vehicle Age: -4, Violations: 2
+Vehicle Age: -3, Violations: 1
+Vehicle Age: -2, Violations: 1
+Vehicle Age: -1, Violations: 8567
+Vehicle Age: 0, Violations: 235356
+Vehicle Age: 1, Violations: 281127
+Vehicle Age: 2, Violations: 287646
+Vehicle Age: 3, Violations: 239359
+Vehicle Age: 4, Violations: 254124
+Vehicle Age: 5, Violations: 209938
+Vehicle Age: 6, Violations: 192100
+Vehicle Age: 7, Violations: 162617
+Vehicle Age: 8, Violations: 154205
+Vehicle Age: 9, Violations: 122044
+Vehicle Age: 10, Violations: 120447
+Vehicle Age: 11, Violations: 100987
+Vehicle Age: 12, Violations: 92003
+Vehicle Age: 13, Violations: 76504
+Vehicle Age: 14, Violations: 62741
+Vehicle Age: 15, Violations: 78176
+Vehicle Age: 16, Violations: 71411
+Vehicle Age: 17, Violations: 57323
+Vehicle Age: 18, Violations: 44822
+Vehicle Age: 19, Violations: 39363
+Vehicle Age: 20, Violations: 28284
+Vehicle Age: 21, Violations: 19382
+Vehicle Age: 22, Violations: 13838
+Vehicle Age: 23, Violations: 2
+Vehicle Age: 24, Violations: 7227
+Vehicle Age: 25, Violations: 4944
+Vehicle Age: 26, Violations: 4350
+Vehicle Age: 27, Violations: 1981
+Vehicle Age: 28, Violations: 2133
+Vehicle Age: 29, Violations: 1065
+Vehicle Age: 30, Violations: 800
 Finalizing MPI.
 
 --------------------------------------------------------------------------------
 File Name: log_process_0.txt
 MPI Initialized.
-Process 0 reading from offset 0 to 63019764
-Process 0 finished reading. Total records read: 2974888
-Starting to process records in parallel. Total records: 2974888
-Finished processing records in parallel. Total records processed: 2974888
+MPI Initialized.
+Starting to process records. Total records: 2974887
+Finished processing records. Total records processed: 2974887
+Vehicle Age: -23, Violations: 1
+Vehicle Age: -22, Violations: 1
+Vehicle Age: -20, Violations: 2
+Vehicle Age: -18, Violations: 1
+Vehicle Age: -17, Violations: 1
+Vehicle Age: -15, Violations: 1
+Vehicle Age: -14, Violations: 1
+Vehicle Age: -13, Violations: 2
+Vehicle Age: -11, Violations: 1
+Vehicle Age: -9, Violations: 1
+Vehicle Age: -8, Violations: 1
+Vehicle Age: -7, Violations: 2
+Vehicle Age: -6, Violations: 1
+Vehicle Age: -5, Violations: 1
+Vehicle Age: -4, Violations: 2
+Vehicle Age: -3, Violations: 1
+Vehicle Age: -2, Violations: 1
+Vehicle Age: -1, Violations: 8567
+Vehicle Age: 0, Violations: 235356
+Vehicle Age: 1, Violations: 281127
+Vehicle Age: 2, Violations: 287646
+Vehicle Age: 3, Violations: 239359
+Vehicle Age: 4, Violations: 254124
+Vehicle Age: 5, Violations: 209938
+Vehicle Age: 6, Violations: 192100
+Vehicle Age: 7, Violations: 162617
+Vehicle Age: 8, Violations: 154205
+Vehicle Age: 9, Violations: 122044
+Vehicle Age: 10, Violations: 120447
+Vehicle Age: 11, Violations: 100987
+Vehicle Age: 12, Violations: 92003
+Vehicle Age: 13, Violations: 76504
+Vehicle Age: 14, Violations: 62741
+Vehicle Age: 15, Violations: 78176
+Vehicle Age: 16, Violations: 71411
+Vehicle Age: 17, Violations: 57323
+Vehicle Age: 18, Violations: 44822
+Vehicle Age: 19, Violations: 39363
+Vehicle Age: 20, Violations: 28284
+Vehicle Age: 21, Violations: 19382
+Vehicle Age: 22, Violations: 13838
+Vehicle Age: 23, Violations: 2
+Vehicle Age: 24, Violations: 7227
+Vehicle Age: 25, Violations: 4944
+Vehicle Age: 26, Violations: 4350
+Vehicle Age: 27, Violations: 1981
+Vehicle Age: 28, Violations: 2133
+Vehicle Age: 29, Violations: 1065
+Vehicle Age: 30, Violations: 800
 Finalizing MPI.
 
 --------------------------------------------------------------------------------
@@ -152,10 +303,58 @@ void logMessage(const std::string& message, int rank) {
 --------------------------------------------------------------------------------
 File Name: log_process_2.txt
 MPI Initialized.
-Process 2 reading from offset 125989148 to 189032330
-Process 2 finished reading. Total records read: 2974888
-Starting to process records in parallel. Total records: 2974888
-Finished processing records in parallel. Total records processed: 2974888
+MPI Initialized.
+Starting to process records. Total records: 2974887
+Finished processing records. Total records processed: 2974887
+Vehicle Age: -23, Violations: 1
+Vehicle Age: -22, Violations: 1
+Vehicle Age: -20, Violations: 2
+Vehicle Age: -18, Violations: 1
+Vehicle Age: -17, Violations: 1
+Vehicle Age: -15, Violations: 1
+Vehicle Age: -14, Violations: 1
+Vehicle Age: -13, Violations: 2
+Vehicle Age: -11, Violations: 1
+Vehicle Age: -9, Violations: 1
+Vehicle Age: -8, Violations: 1
+Vehicle Age: -7, Violations: 2
+Vehicle Age: -6, Violations: 1
+Vehicle Age: -5, Violations: 1
+Vehicle Age: -4, Violations: 2
+Vehicle Age: -3, Violations: 1
+Vehicle Age: -2, Violations: 1
+Vehicle Age: -1, Violations: 8567
+Vehicle Age: 0, Violations: 235356
+Vehicle Age: 1, Violations: 281127
+Vehicle Age: 2, Violations: 287646
+Vehicle Age: 3, Violations: 239359
+Vehicle Age: 4, Violations: 254124
+Vehicle Age: 5, Violations: 209938
+Vehicle Age: 6, Violations: 192100
+Vehicle Age: 7, Violations: 162617
+Vehicle Age: 8, Violations: 154205
+Vehicle Age: 9, Violations: 122044
+Vehicle Age: 10, Violations: 120447
+Vehicle Age: 11, Violations: 100987
+Vehicle Age: 12, Violations: 92003
+Vehicle Age: 13, Violations: 76504
+Vehicle Age: 14, Violations: 62741
+Vehicle Age: 15, Violations: 78176
+Vehicle Age: 16, Violations: 71411
+Vehicle Age: 17, Violations: 57323
+Vehicle Age: 18, Violations: 44822
+Vehicle Age: 19, Violations: 39363
+Vehicle Age: 20, Violations: 28284
+Vehicle Age: 21, Violations: 19382
+Vehicle Age: 22, Violations: 13838
+Vehicle Age: 23, Violations: 2
+Vehicle Age: 24, Violations: 7227
+Vehicle Age: 25, Violations: 4944
+Vehicle Age: 26, Violations: 4350
+Vehicle Age: 27, Violations: 1981
+Vehicle Age: 28, Violations: 2133
+Vehicle Age: 29, Violations: 1065
+Vehicle Age: 30, Violations: 800
 Finalizing MPI.
 
 --------------------------------------------------------------------------------
@@ -198,56 +397,63 @@ def write_contents_and_filenames_to_new_file(folder_path, output_file_path):
     print(f"Contents have been written to {output_file_path}")
 
 # Example usage
-folder_path = '/Users/spartan/Documents/SJSU/Sem2/CMPE-275/Mini2/Final_code/src'  # Folder containing the files you want to process
-output_file_path = '/Users/spartan/Documents/SJSU/Sem2/CMPE-275/Mini2/Final_code/output_file.txt'  # Path where you want to save the new file
+folder_path = '/Users/spartan/Documents/SJSU/Sem2/CMPE-275/Mini2/Final_code/CMPE-275-HPC/src'  # Folder containing the files you want to process
+output_file_path = '/Users/spartan/Documents/SJSU/Sem2/CMPE-275/Mini2/Final_code/CMPE-275-HPC/output_file.txt'  # Path where you want to save the new file
 write_contents_and_filenames_to_new_file(folder_path, output_file_path)
 
 --------------------------------------------------------------------------------
 File Name: loader.cpp
-#include <iostream>
-#include <vector>
-#include <string>
-#include <sstream>
+#include "VehicleRecord.h"
 #include "logger.h"
-#include <omp.h> // Include the OpenMP header
+#include <omp.h>
+#include <vector>
+#include <iostream>
+#include <map>          // Include for std::map
+#include <sstream>      // Include for std::ostringstream
 
-void processRecords(const std::vector<std::string>& records, int rank) {
-    int numRecords = records.size();
-
-    // Log the start of processing
+void processRecords(const std::vector<VehicleRecord>& records, int rank) {
     std::ostringstream msg;
-    msg << "Starting to process records in parallel. Total records: " << numRecords;
+    msg << "Starting to process records. Total records: " << records.size();
     logMessage(msg.str(), rank);
 
-    // The actual processing part, parallelized using OpenMP
-    #pragma omp parallel for default(none) shared(records, numRecords, rank)
-    for (int i = 0; i < numRecords; ++i) {
-        // Each thread processes a portion of the records
-        // Insert your data processing logic here
-        // For demonstration, we'll just log the processing of each record by each thread (not recommended for actual logging due to high volume)
-        // #pragma omp critical
-        // {
-        //     std::ostringstream threadMsg;
-        //     threadMsg << "Thread " << omp_get_thread_num() << " processing record " << i;
-        //     logMessage(threadMsg.str(), rank);
-        // }
+    // Initialize a local map for each thread to avoid the need for critical sections
+    std::vector<std::map<int, int>> localMaps(omp_get_max_threads());
+
+    #pragma omp parallel for
+    for (size_t i = 0; i < records.size(); ++i) {
+        int age = records[i].vehicleAge;
+        int threadNum = omp_get_thread_num();
+        localMaps[threadNum][age]++;
     }
 
-    // Log the end of processing
+    // Combine local maps into a single map
+    std::map<int, int> violationsByAge;
+    for (auto& localMap : localMaps) {
+        for (auto& entry : localMap) {
+            violationsByAge[entry.first] += entry.second;
+        }
+    }
+
     msg.str("");
-    msg << "Finished processing records in parallel. Total records processed: " << numRecords;
+    msg << "Finished processing records. Total records processed: " << records.size();
     logMessage(msg.str(), rank);
+
+    for (const auto& pair : violationsByAge) {
+        std::ostringstream ageMsg;
+        ageMsg << "Vehicle Age: " << pair.first << ", Violations: " << pair.second;
+        logMessage(ageMsg.str(), rank);
+    }
 }
 
 --------------------------------------------------------------------------------
 File Name: main.cpp
-// main.cpp
 #include <mpi.h>
 #include <vector>
 #include <string>
 #include "reader.h"
 #include "loader.h"
 #include "logger.h"
+#include "VehicleRecord.h"
 
 int main(int argc, char* argv[]) {
     MPI_Init(&argc, &argv);
@@ -258,11 +464,11 @@ int main(int argc, char* argv[]) {
 
     logMessage("MPI Initialized.", rank);
 
-    std::vector<std::string> records;
-    std::string filePath = "/Users/spartan/Documents/SJSU/Sem2/CMPE-275/Mini2/Final_code/data/processed.csv"; 
+    std::vector<VehicleRecord> records; // Correctly declared as a vector of VehicleRecord
+    std::string filePath = "/Users/spartan/Documents/SJSU/Sem2/CMPE-275/Mini2/Final_code/CMPE-275-HPC/data/processed.csv"; 
 
-    distributeRecords(filePath, rank, size, records);
-    processRecords(records, rank);
+    distributeRecords(filePath, rank, size, records); // Now correctly matches the updated signature
+    processRecords(records, rank); // Also matches the updated signature
 
     logMessage("Finalizing MPI.", rank);
 

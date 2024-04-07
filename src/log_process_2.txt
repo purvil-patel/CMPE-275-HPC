@@ -1,6 +1,54 @@
 MPI Initialized.
-Process 2 reading from offset 125989148 to 189032330
-Process 2 finished reading. Total records read: 2974888
-Starting to process records in parallel. Total records: 2974888
-Finished processing records in parallel. Total records processed: 2974888
+MPI Initialized.
+Starting to process records. Total records: 2974887
+Finished processing records. Total records processed: 2974887
+Vehicle Age: -23, Violations: 1
+Vehicle Age: -22, Violations: 1
+Vehicle Age: -20, Violations: 2
+Vehicle Age: -18, Violations: 1
+Vehicle Age: -17, Violations: 1
+Vehicle Age: -15, Violations: 1
+Vehicle Age: -14, Violations: 1
+Vehicle Age: -13, Violations: 2
+Vehicle Age: -11, Violations: 1
+Vehicle Age: -9, Violations: 1
+Vehicle Age: -8, Violations: 1
+Vehicle Age: -7, Violations: 2
+Vehicle Age: -6, Violations: 1
+Vehicle Age: -5, Violations: 1
+Vehicle Age: -4, Violations: 2
+Vehicle Age: -3, Violations: 1
+Vehicle Age: -2, Violations: 1
+Vehicle Age: -1, Violations: 8567
+Vehicle Age: 0, Violations: 235356
+Vehicle Age: 1, Violations: 281127
+Vehicle Age: 2, Violations: 287646
+Vehicle Age: 3, Violations: 239359
+Vehicle Age: 4, Violations: 254124
+Vehicle Age: 5, Violations: 209938
+Vehicle Age: 6, Violations: 192100
+Vehicle Age: 7, Violations: 162617
+Vehicle Age: 8, Violations: 154205
+Vehicle Age: 9, Violations: 122044
+Vehicle Age: 10, Violations: 120447
+Vehicle Age: 11, Violations: 100987
+Vehicle Age: 12, Violations: 92003
+Vehicle Age: 13, Violations: 76504
+Vehicle Age: 14, Violations: 62741
+Vehicle Age: 15, Violations: 78176
+Vehicle Age: 16, Violations: 71411
+Vehicle Age: 17, Violations: 57323
+Vehicle Age: 18, Violations: 44822
+Vehicle Age: 19, Violations: 39363
+Vehicle Age: 20, Violations: 28284
+Vehicle Age: 21, Violations: 19382
+Vehicle Age: 22, Violations: 13838
+Vehicle Age: 23, Violations: 2
+Vehicle Age: 24, Violations: 7227
+Vehicle Age: 25, Violations: 4944
+Vehicle Age: 26, Violations: 4350
+Vehicle Age: 27, Violations: 1981
+Vehicle Age: 28, Violations: 2133
+Vehicle Age: 29, Violations: 1065
+Vehicle Age: 30, Violations: 800
 Finalizing MPI.

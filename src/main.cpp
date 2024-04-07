@@ -1,10 +1,10 @@
-// main.cpp
 #include <mpi.h>
 #include <vector>
 #include <string>
 #include "reader.h"
 #include "loader.h"
 #include "logger.h"
+#include "VehicleRecord.h"
 
 int main(int argc, char* argv[]) {
     MPI_Init(&argc, &argv);
@@ -15,11 +15,11 @@ int main(int argc, char* argv[]) {
 
     logMessage("MPI Initialized.", rank);
 
-    std::vector<std::string> records;
+    std::vector<VehicleRecord> records; // Correctly declared as a vector of VehicleRecord
     std::string filePath = "/Users/spartan/Documents/SJSU/Sem2/CMPE-275/Mini2/Final_code/CMPE-275-HPC/data/processed.csv"; 
 
-    distributeRecords(filePath, rank, size, records);
-    processRecords(records, rank);
+    distributeRecords(filePath, rank, size, records); // Now correctly matches the updated signature
+    processRecords(records, rank); // Also matches the updated signature
 
     logMessage("Finalizing MPI.", rank);
 
