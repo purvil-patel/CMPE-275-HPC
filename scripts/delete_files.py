@@ -28,7 +28,7 @@ def delete_all_files_in_directory(directory_path):
 base_path = '/Users/spartan/Documents/SJSU/Sem2/CMPE-275/Mini2/Final_code/CMPE-275-HPC/'  # Adjust your base directory as needed
 
 # Directories to completely clean out
-directories_to_clean = ['logs', 'final_data']
+directories_to_clean = ['logs']
 for directory in directories_to_clean:
     directory_path = os.path.join(base_path, directory)
     delete_all_files_in_directory(directory_path)
