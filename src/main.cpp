@@ -19,7 +19,7 @@ int main(int argc, char* argv[]) {
     logMessage("MPI Initialized.", rank);
 
     std::vector<std::string> records;
-    std::string filePath = "../data/Parking_Violations_Issued_-_Fiscal_Year_2024_20240405.csv"; 
+    std::string filePath = "../data/NYC_Parking_violation_dataset.csv"; 
 
     distributeRecords(filePath, rank, size, records);
     processRecords(records, rank);
