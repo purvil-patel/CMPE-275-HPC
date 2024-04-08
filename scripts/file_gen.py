@@ -1,14 +1,21 @@
 import os
 
 def write_contents_and_filenames_to_new_file(folder_path, output_file_path):
+    # Construct the path to the directory you want to skip
+    skip_path = os.path.join(folder_path, 'ui/venv')  # Adjust this as needed
+
     with open(output_file_path, 'w', encoding='utf-8') as output_file:
         # Walk through all directories and files in the folder
         for root, dirs, files in os.walk(folder_path):
+            # Check if the current directory is or is under the directory to skip
+            if root.startswith(skip_path):
+                continue  # Skip this directory and its files
+            
             for file in files:
-                # Skip if the file is a .txt file
+                # Skip if the file is a .csv file
                 if file.endswith('.csv'):
                     continue
-                
+
                 file_path = os.path.join(root, file)
                 try:
                     # Read the content of the current file

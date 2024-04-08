@@ -1,7 +1,6 @@
 data/
 src/ui/venv
-src/records_per_second_process*
-src/log_process*
-src/leaned_data_rank*
-src/combined_cleaned_data.csv
-src/
+logs/
+final_data/
+scripts/delete_files.sh
+
