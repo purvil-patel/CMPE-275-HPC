@@ -6,10 +6,22 @@ import matplotlib
 matplotlib.use('Agg')  # This line is crucial for non-GUI backend
 app = Flask(__name__)
 
+def clean_csv(input_file_path, output_file_path):
+    with open(input_file_path, 'r', encoding='utf-8', errors='ignore') as infile, \
+         open(output_file_path, 'w', encoding='utf-8') as outfile:
+        for line in infile:
+            corrected_line = line.strip()  # Remove leading/trailing whitespace
+            # Simple check for unmatched quotes (very basic, might need adjustment)
+            if corrected_line.count('"') % 2 != 0:
+                corrected_line = corrected_line.replace('"', '')
+            outfile.write(corrected_line + '\n')
+
+input_file_path = '../../final_data/combined_cleaned_data.csv'
+output_file_path = '../../final_data/cleaned_file.csv'
+clean_csv(input_file_path, output_file_path)
 # Load your CSV data
 # Assuming this file path is accessible, adjust accordingly or use an uploaded file method
-df = pd.read_csv('processed.csv', low_memory=False)
-
+df = pd.read_csv('../../final_data/cleaned_file.csv', low_memory=False, on_bad_lines='skip')
 
 @app.route('/')
 def index():
