@@ -1,8 +1,12 @@
+import glob
 import io
+import os
 import pandas as pd
 import matplotlib.pyplot as plt
 from flask import Flask, send_file, render_template_string
 import matplotlib
+from flask import url_for
+
 matplotlib.use('Agg')  # This line is crucial for non-GUI backend
 app = Flask(__name__)
 
@@ -25,6 +29,7 @@ def index():
             <ul>
                 <li><a href="/timeplot">Time Analysis</a></li>
                 <li><a href="/geoplot">Geographic Analysis</a></li>
+                <li><a href="/performance">Performance Analysis</a></li>
             </ul>
         </body>
     </html>
@@ -91,6 +96,66 @@ def geoplot():
     </html>
     '''
     return render_template_string(geo_analysis_html)
+
+
+@app.route('/performance')
+def performance():
+    # Get a list of csv files to process, excluding 'processed.csv'
+    csv_files = get_csv_files('.')
+    plot_data = []
+
+    static_folder = 'static'
+    if not os.path.exists(static_folder):
+        os.makedirs(static_folder)
+
+    # Process each csv file
+    for idx, file_path in enumerate(csv_files):
+        # Load the dataframe and determine the number of processes
+        dataframe, num_processes = load_csv(file_path)
+
+        # Generate the plot and store it in a BytesIO buffer
+        plot_buf = plot_records_vs_time(dataframe, num_processes)
+
+        # Create a unique endpoint for this particular plot
+        plot_endpoint = f'performance_plot_{idx}'
+
+        # Define the endpoint function that will serve the plot
+        app.view_functions[plot_endpoint] = lambda: send_file(
+            io.BytesIO(plot_buf.getvalue()),
+            attachment_filename=f"plot{idx}.png",
+            mimetype='image/png'
+        )
+
+        # Inside the loop, use this block to save the images
+        plot_filename = f'plot{idx}.png'
+        plot_path = os.path.join(static_folder, plot_filename)
+        with open(plot_path, 'wb') as plot_file:
+            plot_file.write(plot_buf.getbuffer())
+
+        # Add the URL for the static plot image to the list
+        plot_data.append(url_for('static', filename=plot_filename))
+
+    # Render the template with the list of plot urls
+    return render_template_string(performance_analysis_html, plot_urls=plot_data)
+
+
+# HTML template for the performance analysis page
+performance_analysis_html = '''
+<html>
+    <head>
+        <title>Performance Analysis Plots</title>
+    </head>
+    <body>
+        <h1>Performance Analysis Plots</h1>
+        <div>
+            {% for plot_url in plot_urls %}
+            <img src="{{ plot_url }}" alt="Performance Plot">
+            {% endfor %}
+        </div>
+        <a href="/">Back to Homepage</a>
+    </body>
+</html>
+'''
 
 
 def serve_pil_image(pil_img):
@@ -222,6 +287,42 @@ def plot_borough():
     buf.seek(0)
     plt.close(fig)
     return send_file(buf, mimetype='image/png')
+
+# Performance Analysis: Records Processed Over Time
+
+
+def get_csv_files(directory, exclude_file='processed.csv'):
+    # This function will find all csv files in the given directory excluding the 'processed.csv'
+    return [f for f in glob.glob(f"{directory}/*.csv") if exclude_file not in f]
+
+
+def determine_number_of_processes(dataframe):
+    # The number of processes will be one less than the number of columns
+    # because the first column is for seconds
+    return dataframe.shape[1] - 1
+
+
+def plot_records_vs_time(dataframe, num_processes):
+    # Plotting function suitable for Flask, which saves the plot to a BytesIO buffer and returns it
+    fig, ax = plt.subplots()
+    for i in range(num_processes):
+        ax.plot(dataframe['Seconds'],
+                dataframe[f'RecordsProcessed-P{i}'], label=f'Process P{i}')
+    ax.set_xlabel('Time (Seconds)')
+    ax.set_ylabel('Number of Records Processed')
+    ax.set_title('Records Processed Over Time by Each Process')
+    ax.legend()
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    buf.seek(0)
+    plt.close(fig)
+    return buf
+
+
+def load_csv(file_path):
+    dataframe = pd.read_csv(file_path, low_memory=False)
+    num_processes = determine_number_of_processes(dataframe)
+    return dataframe, num_processes
 
 
 if __name__ == '__main__':
