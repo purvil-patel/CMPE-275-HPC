@@ -6,8 +6,8 @@ def write_contents_and_filenames_to_new_file(folder_path, output_file_path):
         for root, dirs, files in os.walk(folder_path):
             for file in files:
                 # Skip if the file is a .txt file
-                # if file.endswith('.txt'):
-                #     continue
+                if file.endswith('.csv'):
+                    continue
                 
                 file_path = os.path.join(root, file)
                 try:

@@ -1,13 +1,16 @@
-// main.cpp
 #include <mpi.h>
+#include <fstream>
+#include <iostream>
 #include <vector>
 #include <string>
 #include "reader.h"
 #include "loader.h"
 #include "logger.h"
+#include <iostream>
 
 int main(int argc, char* argv[]) {
     MPI_Init(&argc, &argv);
+    double startTime = MPI_Wtime();
 
     int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -16,12 +19,38 @@ int main(int argc, char* argv[]) {
     logMessage("MPI Initialized.", rank);
 
     std::vector<std::string> records;
-    std::string filePath = "/Users/spartan/Documents/SJSU/Sem2/CMPE-275/Mini2/Final_code/CMPE-275-HPC/data/processed.csv"; 
+    std::string filePath = "../data/Parking_Violations_Issued_-_Fiscal_Year_2024_20240405.csv"; 
 
     distributeRecords(filePath, rank, size, records);
     processRecords(records, rank);
 
+    // Ensures all processes have finished processing
+    MPI_Barrier(MPI_COMM_WORLD); 
+
+    if (rank == 0) {
+        std::ofstream combinedFile("combined_cleaned_data.csv");
+        for (int i = 0; i < size; i++) {
+            std::string filename = "cleaned_data_rank_" + std::to_string(i) + ".csv";
+            // std::string filename = "cleaned_data_process_" + std::to_string(i) + ".csv";
+            std::ifstream inputFile(filename);
+            if (inputFile.is_open()) {
+                combinedFile << inputFile.rdbuf();
+                inputFile.close();
+            } else {
+                logMessage("Failed to open file: " + filename + " for combining.", rank);
+            }
+        }
+        combinedFile.close();
+        logMessage("All processed data combined into a single file.", rank);
+    }
+
     logMessage("Finalizing MPI.", rank);
+
+    double endTime = MPI_Wtime();  // End timing
+    double executionTime = endTime - startTime;
+    if (rank == 0) {
+        std::cout << "Total Execution Time: " << executionTime << " seconds." << std::endl;
+    }
 
     MPI_Finalize();
 
