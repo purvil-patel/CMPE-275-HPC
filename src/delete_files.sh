@@ -22,7 +22,10 @@ declare -a files=("cleaned_data_rank_0.csv"
                   "log_process_0.txt"
                   "log_process_1.txt"
                   "log_process_2.txt"
-                  "combined_cleaned_data.csv")
+                  "combined_cleaned_data.csv"
+                  "records_processed_rank_0.csv"
+                  "records_processed_rank_1.csv"
+                  "records_processed_rank_2.csv")
 
 # Loop through the array and delete each file
 for file in "${files[@]}"; do
