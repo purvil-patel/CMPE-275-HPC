@@ -1,29 +1,38 @@
 import pandas as pd
 
-csv_files_directory = '../data/'
+def merge_csv_files(process_count):
+    csv_files_directory = '../data/'
+    dfs = []  # To store the loaded DataFrames
 
-# Load the CSV files
-df1 = pd.read_csv(f'{csv_files_directory}records_per_second_process_0.csv')
-df2 = pd.read_csv(f'{csv_files_directory}records_per_second_process_1.csv')
-df3 = pd.read_csv(f'{csv_files_directory}records_per_second_process_2.csv')
+    # Dynamically load CSV files based on the number of processes
+    for i in range(process_count):
+        file_path = f'{csv_files_directory}records_per_second_process_{i}.csv'
+        df = pd.read_csv(file_path)
+        dfs.append(df)
+    
+    # Merge the DataFrames on the 'Seconds' column
+    merged_df = dfs[0]
+    for i in range(1, len(dfs)):
+        merged_df = merged_df.merge(dfs[i], on='Seconds', how='outer', suffixes=('', f'-P{i}'))
+    
+    # Dynamically generate new column names
+    column_names = ['Seconds'] + [f'RecordsProcessed-P{i}' for i in range(process_count)]
+    merged_df.columns = column_names
+    
+    # Fill missing values with 0, assuming missing values should be treated as 0
+    merged_df.fillna(0, inplace=True)
 
-# Merge the dataframes on the 'Seconds' column
-merged_df = df1.merge(df2, on='Seconds', how='outer', suffixes=('-P0', '-P1'))
-merged_df = merged_df.merge(df3, on='Seconds', how='outer')
+    # Sort the dataframe based on 'Seconds' column
+    merged_df.sort_values(by='Seconds', inplace=True)
 
-# Rename columns appropriately
-merged_df.columns = ['Seconds', 'RecordsProcessed-P0', 'RecordsProcessed-P1', 'RecordsProcessed-P2']
+    # Reset index after sorting
+    merged_df.reset_index(drop=True, inplace=True)
 
-# Fill missing values with 0, assuming missing values should be treated as 0
-merged_df.fillna(0, inplace=True)
+    # Save the merged dataframe to a new CSV file
+    merged_df.to_csv('../final_data/merged_file.csv', index=False)
 
-# Sort the dataframe based on 'Seconds' column
-merged_df.sort_values(by='Seconds', inplace=True)
+    print("Merging complete. The merged data is saved as 'merged_file.csv'.")
 
-# Reset index after sorting
-merged_df.reset_index(drop=True, inplace=True)
-
-# Save the merged dataframe to a new CSV file
-merged_df.to_csv('../final_data/merged_file.csv', index=False)
-
-print("Merging complete. The merged data is saved as 'merged_file.csv'.")
+# Ask the user for the number of processes
+process_count = int(input("Enter the number of processes: "))
+merge_csv_files(process_count)
