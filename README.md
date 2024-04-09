@@ -8,8 +8,9 @@ This project aims to demonstrate the use of high-performance computing technique
 
 ### Prerequisites
 
-- C++ compiler with C++17 support
+- C++ compiler with C++13 support
 - MPI implementation (e.g., Open MPI)
+- OpenMP
 - Python 3 with Flask and Pandas installed
 - Matplotlib for Python
 
