@@ -14,7 +14,7 @@ This project aims to demonstrate the use of high-performance computing technique
 - Python 3 with Flask and Pandas installed
 - Matplotlib for Python
 
-** Note:- Paste the New York City traffic violation Dataset in the "data/" folder **
+**Note:- Paste the New York City traffic violation Dataset in the "data/" folder**
 
 ### Installation
 
