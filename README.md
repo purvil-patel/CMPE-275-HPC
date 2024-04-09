@@ -36,6 +36,11 @@ This project aims to demonstrate the use of high-performance computing technique
 
 ## How to Run
 
+* **To Execute all the scripts:**
+  ```
+  ./automate_commands.sh
+  ```
+
 1. **Compiling the C++ Program:**
 
    Compile the C++ program using the following command:
