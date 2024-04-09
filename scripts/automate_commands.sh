@@ -1,7 +1,5 @@
 #!/bin/bash
 
-
-
 # Run the Python script to delete unwanted files
 python3 delete_files.py
 
@@ -18,7 +16,7 @@ g++-13 -o my_program main.cpp reader.cpp loader.cpp logger.cpp -std=c++17 -fopen
 mpiexec -n $process_count ./my_program
 
 
-data_directory="/Users/spartan/Documents/SJSU/Sem2/CMPE-275/Mini2/Final_code/CMPE-275-HPC/data"
+data_directory="../data"
 
 # Check if the required files are generated
 while ! ls $data_directory/records_per_second_process_*.csv 1> /dev/null 2>&1; do
