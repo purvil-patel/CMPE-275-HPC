@@ -16,6 +16,8 @@ This project aims to demonstrate the use of high-performance computing technique
 
 **Note:- Paste the New York City traffic violation Dataset in the "data/" folder**
 
+**Download data from here:** https://data.cityofnewyork.us/City-Government/Parking-Violations-Issued-Fiscal-Year-2024/pvqr-7yc4/about_data
+
 ### Installation
 
 1. Clone the repository:
